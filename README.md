@@ -53,11 +53,11 @@ Na versão de **foto**, o corte é aplicado na hora (o preview já mostra o resu
 - **Conexão com a internet é necessária na primeira execução** — ambos os arquivos carregam bibliotecas de CDN:
   - `vhs-filter.html`: `heic2any` (conversão de HEIC) e `gif.js` (exportação de GIF).
   - `vhs-video.html`: `ffmpeg.wasm` (extração/remontagem de vídeo).
-- **`vhs-video.html` pode precisar ser servido por um servidor local**, em vez de aberto por duplo clique (`file://`), dependendo do navegador — o `ffmpeg.wasm` às vezes não carrega em contexto `file://`. Se travar ao carregar o motor de vídeo, rode na pasta do arquivo:
+- **`vhs-video.html` precisa ser servido por um servidor local**, em vez de aberto por duplo clique (`file://`) — o `ffmpeg.wasm` depende de `SharedArrayBuffer`, que só fica disponível se a página for servida com os cabeçalhos `Cross-Origin-Opener-Policy` e `Cross-Origin-Embedder-Policy`. Um `python3 -m http.server` comum **não** envia esses cabeçalhos e resulta no erro `SharedArrayBuffer is not defined`. Por isso, use o `servidor.py` incluído, que já adiciona os headers certos: na pasta do arquivo, rode
   ```
-  python3 -m http.server 8080
+  python3 servidor.py
   ```
-  e abra `http://localhost:8080/vhs-video.html`.
+  e abra `http://localhost:8000/vhs-video.html`.
 - Vídeos longos ou em alta resolução podem levar alguns minutos para processar — o processamento é feito quadro a quadro, no próprio navegador.
 - Para desempenho, a foto é trabalhada em até 900px no maior lado, e a prévia ao vivo do vídeo em até 480px de largura; a exportação final do vídeo usa a resolução escolhida no seletor.
 

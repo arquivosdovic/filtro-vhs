@@ -117,6 +117,29 @@
   }
   .trim-handle.end { background: var(--magenta); }
 
+  .player-row { display: none; align-items: center; gap: 10px; }
+  .player-row.active { display: flex; }
+  .time-label { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; min-width: 38px; text-align: center; }
+  .scrub-track {
+    position: relative; flex: 1; height: 20px; display: flex; align-items: center;
+    cursor: pointer; touch-action: none;
+  }
+  .scrub-track::before {
+    content: ''; position: absolute; left: 0; right: 0; height: 4px; background: var(--tape-black);
+    border: 1px solid var(--panel-line); border-radius: 2px;
+  }
+  .scrub-fill {
+    position: absolute; left: 0; width: 0%; height: 4px; background: linear-gradient(90deg, var(--cyan), var(--magenta));
+    border-radius: 2px; pointer-events: none;
+  }
+  .scrub-handle {
+    position: absolute; top: 50%; left: 0%; width: 12px; height: 12px; margin-left: -6px; margin-top: -6px;
+    background: var(--cyan); border-radius: 50%; border: 2px solid #0c0b10; pointer-events: none;
+  }
+  .trim-mark-row { display: none; gap: 8px; }
+  .trim-mark-row.active { display: flex; }
+  .btn.small { flex: 1; font-size: 10px; padding: 7px 8px; letter-spacing: 1px; }
+
   .upload-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .btn {
     background: var(--panel); border: 1px solid var(--panel-line); color: var(--text);
@@ -188,9 +211,10 @@
 
   <div class="notice">
     <strong>Nota:</strong> o processamento de vídeo roda inteiramente no seu navegador via <code>ffmpeg.wasm</code> e pode levar
-    alguns minutos em clipes mais longos — isso é esperado. Se ao abrir este arquivo direto (duplo clique) o carregamento do
-    motor de vídeo travar ou der erro, rode por um servidor local: no terminal, dentro da pasta do arquivo, digite
-    <code>python3 -m http.server 8080</code> e abra <code>http://localhost:8080/vhs-video.html</code> no navegador.
+    alguns minutos em clipes mais longos — isso é esperado. Este arquivo precisa ser aberto por um servidor local (não por
+    duplo clique) com os cabeçalhos COOP/COEP necessários para o <code>ffmpeg.wasm</code> funcionar: no terminal, dentro da
+    pasta do arquivo, digite <code>python3 servidor.py</code> e abra <code>http://localhost:8000/vhs-video.html</code> no
+    navegador.
   </div>
 
   <div class="deck">
@@ -207,7 +231,28 @@
         <button class="btn" id="playPauseBtn" disabled>▶ Reproduzir</button>
         <button class="btn" id="cropToggleBtn" disabled>Cropar em 4:3</button>
         <button class="btn" id="processBtn" disabled>Gerar vídeo VHS (.mp4)</button>
+        <button class="btn primary" id="saveVideoBtn" style="display:none;">💾 Salvar vídeo…</button>
         <input type="file" id="fileInput" accept="video/*">
+      </div>
+      <div class="player-row" id="playerRow">
+        <span class="time-label" id="curTime">00:00</span>
+        <div class="scrub-track" id="scrubTrack">
+          <div class="scrub-fill" id="scrubFill"></div>
+          <div class="scrub-handle" id="scrubHandle"></div>
+        </div>
+        <span class="time-label" id="totTime">00:00</span>
+        <select id="speedSelect" title="Velocidade de reprodução">
+          <option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option>
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2×</option>
+        </select>
+      </div>
+      <div class="trim-mark-row" id="trimMarkRow">
+        <button class="btn small" id="markTrimStartBtn">⏮ Início do corte aqui</button>
+        <button class="btn small" id="markTrimEndBtn">Fim do corte aqui ⏭</button>
       </div>
       <div class="ctrl" id="cropSizeCtrl" style="display:none;">
         <label>Tamanho do corte <span class="val" id="v-cropsize">100</span></label>
@@ -285,6 +330,7 @@
       </div>
 
       <div class="presets">
+        <button class="btn" data-preset="original">Original (sem filtro)</button>
         <button class="btn" data-preset="leve">Leve</button>
         <button class="btn" data-preset="classico">Clássico</button>
         <button class="btn" data-preset="podre">Fita podre</button>
@@ -294,7 +340,8 @@
   </div>
 
   <div class="footer-note">
-    Tudo roda localmente — seu vídeo não é enviado a nenhum servidor. O download começa automaticamente quando o processamento termina.
+    Tudo roda localmente — seu vídeo não é enviado a nenhum servidor. Use o preset "Original (sem filtro)" para exportar
+    (cortado/recortado) sem nenhum efeito VHS aplicado.
   </div>
 
 <script>
@@ -322,6 +369,17 @@
   const cropSizeCtrl = document.getElementById('cropSizeCtrl');
   const cropSizeInput = document.getElementById('cropSize');
   const vCropSize = document.getElementById('v-cropsize');
+  const playerRow = document.getElementById('playerRow');
+  const scrubTrack = document.getElementById('scrubTrack');
+  const scrubFill = document.getElementById('scrubFill');
+  const scrubHandle = document.getElementById('scrubHandle');
+  const curTimeEl = document.getElementById('curTime');
+  const totTimeEl = document.getElementById('totTime');
+  const speedSelect = document.getElementById('speedSelect');
+  const trimMarkRow = document.getElementById('trimMarkRow');
+  const markTrimStartBtn = document.getElementById('markTrimStartBtn');
+  const markTrimEndBtn = document.getElementById('markTrimEndBtn');
+  const saveVideoBtn = document.getElementById('saveVideoBtn');
   const trimCtrl = document.getElementById('trimCtrl');
   const trimTrack = document.getElementById('trimTrack');
   const trimRange = document.getElementById('trimRange');
@@ -354,6 +412,7 @@
   });
 
   const presets = {
+    original: { scan:0,  chroma:0,  noise:0,  track:0,  blur:0,  sat:0,  bw:0,   vig:0  },
     leve:     { scan:20, chroma:25, noise:15, track:5,  blur:10, sat:20, bw:0,   vig:20 },
     classico: { scan:45, chroma:55, noise:35, track:25, blur:20, sat:50, bw:0,   vig:40 },
     podre:    { scan:70, chroma:85, noise:65, track:70, blur:40, sat:75, bw:0,   vig:60 },
@@ -492,6 +551,97 @@
     try { previewVideo.currentTime = t; } catch (e) { /* ignore */ }
   }
 
+  // ---- scrub bar (navegar no vídeo inteiro, independente do trecho de corte) ----
+  function updateScrubUI() {
+    if (!srcDuration) return;
+    const t = previewVideo.currentTime || 0;
+    const frac = clamp01(t / srcDuration) * 100;
+    scrubFill.style.width = frac + '%';
+    scrubHandle.style.left = frac + '%';
+    curTimeEl.textContent = fmtTime(t);
+    totTimeEl.textContent = fmtTime(srcDuration);
+  }
+
+  let scrubDragging = false;
+  function seekFromScrubEvent(e) {
+    if (!srcDuration) return;
+    const rect = scrubTrack.getBoundingClientRect();
+    const frac = clamp01((e.clientX - rect.left) / rect.width);
+    seekPreviewSafe(frac * srcDuration);
+    updateScrubUI();
+  }
+  scrubTrack.addEventListener('pointerdown', (e) => {
+    if (!srcDuration) return;
+    scrubDragging = true;
+    scrubTrack.setPointerCapture(e.pointerId);
+    seekFromScrubEvent(e);
+  });
+  scrubTrack.addEventListener('pointermove', (e) => {
+    if (!scrubDragging) return;
+    seekFromScrubEvent(e);
+  });
+  scrubTrack.addEventListener('pointerup', () => { scrubDragging = false; });
+  scrubTrack.addEventListener('pointercancel', () => { scrubDragging = false; });
+  previewVideo.addEventListener('timeupdate', updateScrubUI);
+
+  // ---- velocidade de reprodução ----
+  speedSelect.addEventListener('change', () => {
+    previewVideo.playbackRate = parseFloat(speedSelect.value) || 1;
+  });
+
+  // ---- levar marcador de início/fim do corte até a posição atual da barra ----
+  markTrimStartBtn.addEventListener('click', () => {
+    if (!srcDuration) return;
+    trimStart = clamp01(previewVideo.currentTime / srcDuration) * srcDuration;
+    trimStart = Math.min(trimStart, trimEnd - 0.2);
+    trimStart = Math.max(trimStart, 0);
+    renderTrim();
+  });
+  markTrimEndBtn.addEventListener('click', () => {
+    if (!srcDuration) return;
+    trimEnd = clamp01(previewVideo.currentTime / srcDuration) * srcDuration;
+    trimEnd = Math.max(trimEnd, trimStart + 0.2);
+    trimEnd = Math.min(trimEnd, srcDuration);
+    renderTrim();
+  });
+
+  // ---- salvar vídeo final escolhendo o local (quando o navegador suportar) ----
+  let lastResultBlob = null;
+  const lastResultName = 'vhs-video.mp4';
+
+  async function saveVideoBlob(blob, suggestedName) {
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [{ description: 'Vídeo MP4', accept: { 'video/mp4': ['.mp4'] } }],
+          excludeAcceptAllOption: true // impede a opção "todos os arquivos", que permitia salvar sem extensão
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        if (handle.name && !/\.mp4$/i.test(handle.name)) {
+          setStatus(`salvo como "${handle.name}" — sem extensão .mp4, talvez seja preciso renomear manualmente`, true);
+        }
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // usuário cancelou o diálogo
+        console.warn('Seletor de local indisponível, baixando pelo método padrão.', err);
+      }
+    }
+    // navegador sem suporte ao seletor (ex: Firefox, Safari) — baixa normalmente
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = suggestedName;
+    link.href = url;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+
+  saveVideoBtn.addEventListener('click', () => {
+    if (lastResultBlob) saveVideoBlob(lastResultBlob, lastResultName);
+  });
+
   function dragTrimHandle(handleEl, which) {
     handleEl.addEventListener('pointerdown', (e) => {
       handleEl.setPointerCapture(e.pointerId);
@@ -556,6 +706,12 @@
     cropToggleBtn.textContent = 'Cropar em 4:3';
     trimCtrl.style.display = 'none';
     srcDuration = 0; trimStart = 0; trimEnd = 0;
+    playerRow.classList.remove('active');
+    trimMarkRow.classList.remove('active');
+    speedSelect.value = '1';
+    previewVideo.playbackRate = 1;
+    saveVideoBtn.style.display = 'none';
+    lastResultBlob = null;
 
     setStatus('lendo informações do vídeo…');
   });
@@ -567,6 +723,9 @@
     trimEnd = srcDuration;
     trimCtrl.style.display = srcDuration > 0 ? 'flex' : 'none';
     renderTrim();
+    playerRow.classList.toggle('active', srcDuration > 0);
+    trimMarkRow.classList.toggle('active', srcDuration > 0);
+    updateScrubUI();
     processBtn.disabled = false;
     playPauseBtn.disabled = false;
     cropToggleBtn.disabled = false;
@@ -793,6 +952,8 @@
     processBtn.disabled = true;
     uploadBtn.disabled = true;
     playPauseBtn.disabled = true;
+    saveVideoBtn.style.display = 'none';
+    lastResultBlob = null;
     if (!previewVideo.paused) previewVideo.pause();
     progressWrap.classList.add('active');
     logEl.innerHTML = '';
@@ -914,7 +1075,7 @@
       assembleArgs.push('output.mp4');
       await engine.run(...assembleArgs);
 
-      // 6. Read result and offer download
+      // 6. Read result and offer save
       const result = engine.FS('readFile', 'output.mp4');
       const resultBlob = new Blob([result.buffer], { type: 'video/mp4' });
       const url = URL.createObjectURL(resultBlob);
@@ -922,16 +1083,16 @@
       stopPreviewLoop();
       previewCanvas.style.display = 'none';
       playPauseBtn.style.display = 'none';
+      playerRow.classList.remove('active');
+      trimMarkRow.classList.remove('active');
       resultVideo.src = url;
       resultVideo.style.display = 'block';
 
-      const link = document.createElement('a');
-      link.download = 'vhs-video.mp4';
-      link.href = url;
-      link.click();
+      lastResultBlob = resultBlob;
+      saveVideoBtn.style.display = '';
 
       setProgress(100, 'concluído ✓');
-      setStatus('vídeo pronto e baixado ✓');
+      setStatus('vídeo pronto — clique em "Salvar vídeo…" para escolher o local ✓');
 
       // cleanup virtual FS to free memory for a possible next run
       try {
