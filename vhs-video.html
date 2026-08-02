@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>VHS-IZER 3000 · Vídeo</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230c0b10'/%3E%3Crect x='1' y='1' width='98' height='98' rx='19' fill='none' stroke='%232a2732' stroke-width='1'/%3E%3Cg transform='translate(-2.5,-1.5)'%3E%3Cpolygon points='37,29 37,71 73,50' fill='%232ee6d6' opacity='0.85'/%3E%3C/g%3E%3Cg transform='translate(2.5,1.5)'%3E%3Cpolygon points='37,29 37,71 73,50' fill='%23ff3e9d' opacity='0.85'/%3E%3C/g%3E%3Cpolygon points='37,29 37,71 73,50' fill='%23f5f3f8'/%3E%3Ccircle cx='82' cy='20' r='4' fill='%23ff3e9d'/%3E%3C/svg%3E">
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+<style>
+  :root{
+    --bg: #0c0b10;
+    --panel: #17151d;
+    --panel-line: #2a2732;
+    --tape-black: #050507;
+    --cyan: #2ee6d6;
+    --magenta: #ff3e9d;
+    --amber: #ffb020;
+    --text: #d9d6e0;
+    --text-dim: #6f6c7a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Courier New', Courier, monospace;
+    min-height: 100%;
+  }
+  body {
+    padding: 32px 16px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .header { text-align: center; position: relative; }
+  .logo { width: 56px; height: 56px; margin: 0 auto 12px; display: block; border-radius: 12px; }
+  .header h1 {
+    font-size: clamp(24px, 5.5vw, 46px);
+    letter-spacing: 3px;
+    margin: 0;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 2px 0 0 var(--cyan), -2px 0 0 var(--magenta);
+  }
+  .header .sub {
+    margin-top: 6px;
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  .rec-dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--magenta); margin-right: 8px; animation: blink 1.2s infinite; vertical-align: middle;
+  }
+  @keyframes blink { 50% { opacity: .15; } }
+
+  .notice {
+    width: 100%; max-width: 1040px;
+    background: var(--panel); border: 1px solid var(--amber);
+    border-radius: 6px; padding: 14px 18px;
+    font-size: 12px; line-height: 1.7; color: var(--text-dim);
+  }
+  .notice strong { color: var(--amber); }
+  .notice code {
+    background: var(--tape-black); padding: 1px 6px; border-radius: 3px; color: var(--cyan);
+  }
+
+  .deck {
+    width: 100%; max-width: 1040px;
+    background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; padding: 20px;
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px;
+  }
+  @media (max-width: 800px) { .deck { grid-template-columns: 1fr; } }
+
+  .screen-wrap {
+    background: var(--tape-black); border: 1px solid var(--panel-line); border-radius: 4px;
+    padding: 10px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .video-frame {
+    position: relative; width: 100%; aspect-ratio: 4/3; background: #000;
+    border: 1px solid #000; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  }
+  video { max-width: 100%; max-height: 100%; display: block; }
+  #previewVideo { position: absolute; visibility: hidden; pointer-events: none; }
+  #previewCanvas { max-width: 100%; max-height: 100%; display: none; cursor: pointer; }
+  .placeholder { color: var(--text-dim); font-size: 13px; text-align: center; padding: 20px; letter-spacing: 1px; }
+
+  .crop-box {
+    position: absolute; border: 2px solid var(--cyan); box-shadow: 0 0 0 2000px rgba(0,0,0,.55);
+    cursor: grab; touch-action: none; display: none;
+  }
+  .crop-box.active { display: block; }
+  .crop-box:active { cursor: grabbing; }
+  .crop-box::before, .crop-box::after {
+    content: ''; position: absolute; border: 1px dashed rgba(255,255,255,.4); pointer-events: none;
+  }
+  .crop-box::before { left: 33.333%; right: 33.333%; top: 0; bottom: 0; border-top: none; border-bottom: none; }
+  .crop-box::after { top: 33.333%; bottom: 33.333%; left: 0; right: 0; border-left: none; border-right: none; }
+  .crop-label {
+    position: absolute; top: -20px; left: 0; font-size: 10px; letter-spacing: 1px; color: var(--cyan);
+    background: rgba(0,0,0,.6); padding: 1px 6px; border-radius: 3px; white-space: nowrap;
+  }
+
+  .trim-track {
+    position: relative; height: 26px; background: var(--tape-black); border: 1px solid var(--panel-line);
+    border-radius: 4px; margin-top: 4px; touch-action: none;
+  }
+  .trim-range {
+    position: absolute; top: 0; bottom: 0; background: linear-gradient(90deg, var(--cyan), var(--magenta)); opacity: .35;
+  }
+  .trim-handle {
+    position: absolute; top: -3px; width: 14px; height: 32px; margin-left: -7px;
+    background: var(--cyan); border-radius: 3px; cursor: ew-resize; touch-action: none;
+    border: 2px solid #0c0b10;
+  }
+  .trim-handle.end { background: var(--magenta); }
+
+  .upload-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    background: var(--panel); border: 1px solid var(--panel-line); color: var(--text);
+    font-family: inherit; font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+    padding: 10px 16px; border-radius: 3px; cursor: pointer; transition: border-color .15s ease, color .15s ease;
+  }
+  .btn:hover { border-color: var(--cyan); color: #fff; }
+  .btn.primary { background: var(--magenta); border-color: var(--magenta); color: #fff; }
+  .btn.primary:hover { background: #ff5cad; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  input[type="file"] { display: none; }
+
+  select {
+    background: var(--tape-black); color: var(--text); border: 1px solid var(--panel-line);
+    font-family: inherit; font-size: 12px; padding: 8px 10px; border-radius: 3px;
+  }
+
+  .controls { display: flex; flex-direction: column; gap: 14px; }
+  .controls-title {
+    font-size: 11px; letter-spacing: 3px; color: var(--text-dim); text-transform: uppercase;
+    border-bottom: 1px solid var(--panel-line); padding-bottom: 8px; margin-bottom: 2px;
+  }
+  .ctrl { display: flex; flex-direction: column; gap: 4px; }
+  .ctrl label { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: 1px; color: var(--text-dim); }
+  .ctrl label span.val { color: var(--cyan); }
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 3px; background: var(--panel-line); border-radius: 2px; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--cyan); cursor: pointer; border: 2px solid #0c0b10;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 13px; height: 13px; border-radius: 50%; background: var(--cyan); cursor: pointer; border: 2px solid #0c0b10;
+  }
+
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .presets .btn { flex: 1; min-width: 90px; font-size: 10px; padding: 8px 10px; }
+
+  .quality-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .quality-row .ctrl { flex: 1; min-width: 130px; }
+
+  .progress-wrap { display: none; flex-direction: column; gap: 6px; }
+  .progress-wrap.active { display: flex; }
+  .progress-bar-track {
+    width: 100%; height: 8px; background: var(--tape-black); border: 1px solid var(--panel-line); border-radius: 4px; overflow: hidden;
+  }
+  .progress-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--cyan), var(--magenta)); transition: width .2s ease; }
+  .progress-label { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
+  .log {
+    font-size: 10px; color: var(--text-dim); max-height: 70px; overflow-y: auto;
+    background: var(--tape-black); border: 1px solid var(--panel-line); border-radius: 4px; padding: 6px 8px;
+    line-height: 1.6;
+  }
+
+  .status-line { font-size: 11px; letter-spacing: 1px; color: var(--amber); min-height: 14px; }
+  .status-line.error { color: var(--magenta); }
+
+  .footer-note { font-size: 11px; color: var(--text-dim); text-align: center; max-width: 500px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+  <div class="header">
+    <img class="logo" alt="Logotipo VHS-IZER 3000" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230c0b10'/%3E%3Crect x='1' y='1' width='98' height='98' rx='19' fill='none' stroke='%232a2732' stroke-width='1'/%3E%3Cg transform='translate(-2.5,-1.5)'%3E%3Cpolygon points='37,29 37,71 73,50' fill='%232ee6d6' opacity='0.85'/%3E%3C/g%3E%3Cg transform='translate(2.5,1.5)'%3E%3Cpolygon points='37,29 37,71 73,50' fill='%23ff3e9d' opacity='0.85'/%3E%3C/g%3E%3Cpolygon points='37,29 37,71 73,50' fill='%23f5f3f8'/%3E%3Ccircle cx='82' cy='20' r='4' fill='%23ff3e9d'/%3E%3C/svg%3E">
+    <h1>VHS-IZER&nbsp;3000</h1>
+    <div class="sub"><span class="rec-dot"></span>agora em vídeo · processamento 100% local</div>
+  </div>
+
+  <div class="notice">
+    <strong>Nota:</strong> o processamento de vídeo roda inteiramente no seu navegador via <code>ffmpeg.wasm</code> e pode levar
+    alguns minutos em clipes mais longos — isso é esperado. Se ao abrir este arquivo direto (duplo clique) o carregamento do
+    motor de vídeo travar ou der erro, rode por um servidor local: no terminal, dentro da pasta do arquivo, digite
+    <code>python3 -m http.server 8080</code> e abra <code>http://localhost:8080/vhs-video.html</code> no navegador.
+  </div>
+
+  <div class="deck">
+    <div class="screen-wrap">
+      <div class="video-frame" id="frame">
+        <div class="placeholder" id="placeholder">nenhuma fita inserida<br>envie um vídeo para começar</div>
+        <video id="previewVideo" style="display:none;" playsinline></video>
+        <canvas id="previewCanvas"></canvas>
+        <video id="resultVideo" style="display:none;" controls></video>
+        <div class="crop-box" id="cropBox"><div class="crop-label">4:3 — arraste para enquadrar</div></div>
+      </div>
+      <div class="upload-row">
+        <button class="btn primary" id="uploadBtn">Carregar vídeo</button>
+        <button class="btn" id="playPauseBtn" disabled>▶ Reproduzir</button>
+        <button class="btn" id="cropToggleBtn" disabled>Cropar em 4:3</button>
+        <button class="btn" id="processBtn" disabled>Gerar vídeo VHS (.mp4)</button>
+        <input type="file" id="fileInput" accept="video/*">
+      </div>
+      <div class="ctrl" id="cropSizeCtrl" style="display:none;">
+        <label>Tamanho do corte <span class="val" id="v-cropsize">100</span></label>
+        <input type="range" id="cropSize" min="30" max="100" value="100">
+      </div>
+      <div class="ctrl" id="trimCtrl" style="display:none;">
+        <label>Trecho a converter <span class="val" id="v-trim">00:00 – 00:00</span></label>
+        <div class="trim-track" id="trimTrack">
+          <div class="trim-range" id="trimRange"></div>
+          <div class="trim-handle" id="trimHandleStart"></div>
+          <div class="trim-handle end" id="trimHandleEnd"></div>
+        </div>
+      </div>
+      <div class="quality-row">
+        <div class="ctrl">
+          <label>Quadros por segundo</label>
+          <select id="fpsSelect">
+            <option value="8">8 fps (mais lento tape)</option>
+            <option value="12" selected>12 fps (clássico)</option>
+            <option value="15">15 fps</option>
+            <option value="24">24 fps (mais fluido)</option>
+          </select>
+        </div>
+        <div class="ctrl">
+          <label>Resolução (largura)</label>
+          <select id="resSelect">
+            <option value="480">480px (mais rápido)</option>
+            <option value="640" selected>640px (equilibrado)</option>
+            <option value="854">854px (mais nítido)</option>
+          </select>
+        </div>
+      </div>
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-label" id="progressLabel">preparando…</div>
+        <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
+        <div class="log" id="log"></div>
+      </div>
+      <div class="status-line" id="statusLine"></div>
+    </div>
+
+    <div class="controls">
+      <div class="controls-title">Controles de fita</div>
+
+      <div class="ctrl">
+        <label>Scan lines <span class="val" id="v-scan">45</span></label>
+        <input type="range" id="scan" min="0" max="100" value="45">
+      </div>
+      <div class="ctrl">
+        <label>Aberração cromática <span class="val" id="v-chroma">55</span></label>
+        <input type="range" id="chroma" min="0" max="100" value="55">
+      </div>
+      <div class="ctrl">
+        <label>Ruído / grão <span class="val" id="v-noise">35</span></label>
+        <input type="range" id="noise" min="0" max="100" value="35">
+      </div>
+      <div class="ctrl">
+        <label>Distorção de tracking <span class="val" id="v-track">25</span></label>
+        <input type="range" id="track" min="0" max="100" value="25">
+      </div>
+      <div class="ctrl">
+        <label>Desfoque <span class="val" id="v-blur">20</span></label>
+        <input type="range" id="blur" min="0" max="100" value="20">
+      </div>
+      <div class="ctrl">
+        <label>Saturação/cor quente <span class="val" id="v-sat">50</span></label>
+        <input type="range" id="sat" min="0" max="100" value="50">
+      </div>
+      <div class="ctrl">
+        <label>Preto e branco <span class="val" id="v-bw">0</span></label>
+        <input type="range" id="bw" min="0" max="100" value="0">
+      </div>
+      <div class="ctrl">
+        <label>Vinheta <span class="val" id="v-vig">40</span></label>
+        <input type="range" id="vig" min="0" max="100" value="40">
+      </div>
+
+      <div class="presets">
+        <button class="btn" data-preset="leve">Leve</button>
+        <button class="btn" data-preset="classico">Clássico</button>
+        <button class="btn" data-preset="podre">Fita podre</button>
+        <button class="btn" data-preset="pb">P&amp;B</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    Tudo roda localmente — seu vídeo não é enviado a nenhum servidor. O download começa automaticamente quando o processamento termina.
+  </div>
+
+<script>
+(function(){
+  const fileInput = document.getElementById('fileInput');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const processBtn = document.getElementById('processBtn');
+  const previewVideo = document.getElementById('previewVideo');
+  const previewCanvas = document.getElementById('previewCanvas');
+  const previewCtx = previewCanvas.getContext('2d');
+  const resultVideo = document.getElementById('resultVideo');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  const placeholder = document.getElementById('placeholder');
+  const statusLine = document.getElementById('statusLine');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFill = document.getElementById('progressFill');
+  const progressLabel = document.getElementById('progressLabel');
+  const logEl = document.getElementById('log');
+  const fpsSelect = document.getElementById('fpsSelect');
+  const resSelect = document.getElementById('resSelect');
+
+  const frameEl = document.getElementById('frame');
+  const cropToggleBtn = document.getElementById('cropToggleBtn');
+  const cropBox = document.getElementById('cropBox');
+  const cropSizeCtrl = document.getElementById('cropSizeCtrl');
+  const cropSizeInput = document.getElementById('cropSize');
+  const vCropSize = document.getElementById('v-cropsize');
+  const trimCtrl = document.getElementById('trimCtrl');
+  const trimTrack = document.getElementById('trimTrack');
+  const trimRange = document.getElementById('trimRange');
+  const trimHandleStart = document.getElementById('trimHandleStart');
+  const trimHandleEnd = document.getElementById('trimHandleEnd');
+  const vTrim = document.getElementById('v-trim');
+
+  const sliders = ['scan','chroma','noise','track','blur','sat','bw','vig'];
+  const defaults = { scan:45, chroma:55, noise:35, track:25, blur:20, sat:50, bw:0, vig:40 };
+
+  let videoFile = null;
+  let ffmpeg = null;
+  let isProcessing = false;
+
+  // ---- crop (4:3) state ----
+  let cropEnabled = false;
+  let cropPosXFrac = 0.5, cropPosYFrac = 0.5; // 0..1, position of the crop box within the available slack
+  let cropSizeFrac = 1; // 0.3..1, size of the crop box relative to the largest 4:3 box that fits
+
+  // ---- trim state (seconds) ----
+  let srcDuration = 0;
+  let trimStart = 0;
+  let trimEnd = 0;
+  let trimDragging = null; // 'start' | 'end' | null
+
+  sliders.forEach(id => {
+    const el = document.getElementById(id);
+    const out = document.getElementById('v-' + id);
+    el.addEventListener('input', () => { out.textContent = el.value; renderPreviewFrame(true); });
+  });
+
+  const presets = {
+    leve:     { scan:20, chroma:25, noise:15, track:5,  blur:10, sat:20, bw:0,   vig:20 },
+    classico: { scan:45, chroma:55, noise:35, track:25, blur:20, sat:50, bw:0,   vig:40 },
+    podre:    { scan:70, chroma:85, noise:65, track:70, blur:40, sat:75, bw:0,   vig:60 },
+    pb:       { scan:50, chroma:15, noise:45, track:20, blur:15, sat:0,  bw:100, vig:55 }
+  };
+  document.querySelectorAll('[data-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = presets[btn.dataset.preset];
+      sliders.forEach(id => {
+        document.getElementById(id).value = p[id];
+        document.getElementById('v-' + id).textContent = p[id];
+      });
+      renderPreviewFrame(true);
+    });
+  });
+
+  function getVals() {
+    const v = {};
+    sliders.forEach(id => v[id] = parseInt(document.getElementById(id).value, 10) / 100);
+    return v;
+  }
+
+  function setStatus(msg, isError) {
+    statusLine.textContent = msg || '';
+    statusLine.classList.toggle('error', !!isError);
+  }
+  function logLine(msg) {
+    const line = document.createElement('div');
+    line.textContent = msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function setProgress(pct, label) {
+    progressFill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    if (label) progressLabel.textContent = label;
+  }
+
+  function fmtTime(t) {
+    t = Math.max(0, t || 0);
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  function clamp01(n) { return n < 0 ? 0 : (n > 1 ? 1 : n); }
+
+  // ---- 4:3 crop box (draggable, resizable via slider) ----
+  function getVideoDisplayRect() {
+    const frameRect = frameEl.getBoundingClientRect();
+    const videoRect = previewCanvas.getBoundingClientRect();
+    return {
+      left: videoRect.left - frameRect.left,
+      top: videoRect.top - frameRect.top,
+      width: videoRect.width,
+      height: videoRect.height
+    };
+  }
+
+  function computeCropBoxSize(vRect) {
+    const maxH = Math.min(vRect.height, vRect.width * 3 / 4);
+    const maxW = maxH * 4 / 3;
+    return { w: maxW * cropSizeFrac, h: maxH * cropSizeFrac };
+  }
+
+  function layoutCropBox() {
+    if (!previewVideo.videoWidth) return;
+    const vRect = getVideoDisplayRect();
+    const box = computeCropBoxSize(vRect);
+    const slackX = Math.max(0, vRect.width - box.w);
+    const slackY = Math.max(0, vRect.height - box.h);
+    const left = vRect.left + slackX * cropPosXFrac;
+    const top = vRect.top + slackY * cropPosYFrac;
+    cropBox.style.left = left + 'px';
+    cropBox.style.top = top + 'px';
+    cropBox.style.width = box.w + 'px';
+    cropBox.style.height = box.h + 'px';
+  }
+
+  function moveCropBoxTo(clientLeft, clientTop) {
+    const frameRect = frameEl.getBoundingClientRect();
+    const vRect = getVideoDisplayRect();
+    const box = computeCropBoxSize(vRect);
+    let left = (clientLeft - frameRect.left) - vRect.left;
+    let top = (clientTop - frameRect.top) - vRect.top;
+    const slackX = Math.max(0, vRect.width - box.w);
+    const slackY = Math.max(0, vRect.height - box.h);
+    left = Math.min(Math.max(left, 0), slackX);
+    top = Math.min(Math.max(top, 0), slackY);
+    cropPosXFrac = slackX > 0 ? left / slackX : 0.5;
+    cropPosYFrac = slackY > 0 ? top / slackY : 0.5;
+    layoutCropBox();
+  }
+
+  let cropDragOffset = null;
+  cropBox.addEventListener('pointerdown', (e) => {
+    cropBox.setPointerCapture(e.pointerId);
+    const boxRect = cropBox.getBoundingClientRect();
+    cropDragOffset = { dx: e.clientX - boxRect.left, dy: e.clientY - boxRect.top };
+  });
+  cropBox.addEventListener('pointermove', (e) => {
+    if (!cropDragOffset) return;
+    moveCropBoxTo(e.clientX - cropDragOffset.dx, e.clientY - cropDragOffset.dy);
+  });
+  cropBox.addEventListener('pointerup', () => { cropDragOffset = null; });
+  cropBox.addEventListener('pointercancel', () => { cropDragOffset = null; });
+
+  cropToggleBtn.addEventListener('click', () => {
+    cropEnabled = !cropEnabled;
+    cropBox.classList.toggle('active', cropEnabled);
+    cropSizeCtrl.style.display = cropEnabled ? 'flex' : 'none';
+    cropToggleBtn.classList.toggle('primary', cropEnabled);
+    cropToggleBtn.textContent = cropEnabled ? 'Cortar 4:3 (ativo)' : 'Cropar em 4:3';
+    if (cropEnabled) layoutCropBox();
+  });
+
+  cropSizeInput.addEventListener('input', () => {
+    cropSizeFrac = parseInt(cropSizeInput.value, 10) / 100;
+    vCropSize.textContent = cropSizeInput.value;
+    layoutCropBox();
+  });
+
+  // ---- trim (trecho) slider ----
+  function renderTrim() {
+    if (!srcDuration) return;
+    const w = trimTrack.offsetWidth;
+    const sx = (trimStart / srcDuration) * w;
+    const ex = (trimEnd / srcDuration) * w;
+    trimHandleStart.style.left = sx + 'px';
+    trimHandleEnd.style.left = ex + 'px';
+    trimRange.style.left = sx + 'px';
+    trimRange.style.width = Math.max(0, ex - sx) + 'px';
+    vTrim.textContent = fmtTime(trimStart) + ' – ' + fmtTime(trimEnd);
+  }
+
+  function seekPreviewSafe(t) {
+    try { previewVideo.currentTime = t; } catch (e) { /* ignore */ }
+  }
+
+  function dragTrimHandle(handleEl, which) {
+    handleEl.addEventListener('pointerdown', (e) => {
+      handleEl.setPointerCapture(e.pointerId);
+      trimDragging = which;
+    });
+    handleEl.addEventListener('pointermove', (e) => {
+      if (trimDragging !== which || !srcDuration) return;
+      const rect = trimTrack.getBoundingClientRect();
+      const frac = clamp01((e.clientX - rect.left) / rect.width);
+      const t = frac * srcDuration;
+      if (which === 'start') {
+        trimStart = Math.min(t, trimEnd - 0.2);
+        trimStart = Math.max(trimStart, 0);
+      } else {
+        trimEnd = Math.max(t, trimStart + 0.2);
+        trimEnd = Math.min(trimEnd, srcDuration);
+      }
+      renderTrim();
+      seekPreviewSafe(which === 'start' ? trimStart : trimEnd);
+    });
+    handleEl.addEventListener('pointerup', () => { trimDragging = null; });
+    handleEl.addEventListener('pointercancel', () => { trimDragging = null; });
+  }
+  dragTrimHandle(trimHandleStart, 'start');
+  dragTrimHandle(trimHandleEnd, 'end');
+
+  window.addEventListener('resize', () => {
+    renderTrim();
+    if (cropEnabled) layoutCropBox();
+  });
+
+  uploadBtn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    videoFile = file;
+    const url = URL.createObjectURL(file);
+    stopPreviewLoop();
+    resultVideo.pause();
+    resultVideo.removeAttribute('src');
+    resultVideo.style.display = 'none';
+    previewVideo.src = url;
+    previewVideo.style.display = 'block';
+    previewCanvas.style.display = 'none';
+    playPauseBtn.style.display = '';
+    placeholder.style.display = 'none';
+
+    // reset crop/trim UI until the new file's metadata is ready
+    processBtn.disabled = true;
+    playPauseBtn.disabled = true;
+    playPauseBtn.textContent = '▶ Reproduzir';
+    cropToggleBtn.disabled = true;
+    cropEnabled = false;
+    cropBox.classList.remove('active');
+    cropSizeCtrl.style.display = 'none';
+    cropSizeFrac = 1;
+    cropSizeInput.value = 100;
+    vCropSize.textContent = '100';
+    cropPosXFrac = 0.5; cropPosYFrac = 0.5;
+    cropToggleBtn.classList.remove('primary');
+    cropToggleBtn.textContent = 'Cropar em 4:3';
+    trimCtrl.style.display = 'none';
+    srcDuration = 0; trimStart = 0; trimEnd = 0;
+
+    setStatus('lendo informações do vídeo…');
+  });
+
+  previewVideo.addEventListener('loadedmetadata', () => {
+    if (!videoFile) return;
+    srcDuration = previewVideo.duration || 0;
+    trimStart = 0;
+    trimEnd = srcDuration;
+    trimCtrl.style.display = srcDuration > 0 ? 'flex' : 'none';
+    renderTrim();
+    processBtn.disabled = false;
+    playPauseBtn.disabled = false;
+    cropToggleBtn.disabled = false;
+    setStatus('');
+
+    previewCanvas.style.display = 'block';
+    renderPreviewFrame(true);
+    if (cropEnabled) layoutCropBox();
+  });
+
+  playPauseBtn.addEventListener('click', () => {
+    if (previewVideo.paused || previewVideo.ended) previewVideo.play();
+    else previewVideo.pause();
+  });
+  previewCanvas.addEventListener('click', () => {
+    if (previewVideo.paused || previewVideo.ended) previewVideo.play();
+    else previewVideo.pause();
+  });
+
+  previewVideo.addEventListener('play', () => {
+    playPauseBtn.textContent = '⏸ Pausar';
+    startPreviewLoop();
+  });
+  previewVideo.addEventListener('pause', () => {
+    playPauseBtn.textContent = '▶ Reproduzir';
+    stopPreviewLoop();
+    renderPreviewFrame(true);
+  });
+  previewVideo.addEventListener('ended', () => {
+    playPauseBtn.textContent = '▶ Reproduzir';
+    stopPreviewLoop();
+  });
+  previewVideo.addEventListener('seeked', () => renderPreviewFrame(true));
+
+  // ---- live VHS preview (canvas mirrors the hidden <video>, with effects) ----
+  let previewLoopId = null;
+  let lastPreviewDrawTs = 0;
+  const PREVIEW_MAX_WIDTH = 480; // capped for smooth real-time performance
+
+  function renderPreviewFrame(force) {
+    if (isProcessing || !previewVideo.videoWidth || !previewVideo.videoHeight) return;
+    const now = performance.now();
+    if (!force && now - lastPreviewDrawTs < 66) return; // throttle to ~15fps while playing
+    lastPreviewDrawTs = now;
+
+    const w = Math.min(previewVideo.videoWidth, PREVIEW_MAX_WIDTH) & ~1;
+    const h = (Math.round(w * previewVideo.videoHeight / previewVideo.videoWidth)) || 1;
+    const v = getVals();
+    const outCanvas = applyVhsEffects(previewVideo, w, h, v);
+
+    if (previewCanvas.width !== w || previewCanvas.height !== h) {
+      previewCanvas.width = w;
+      previewCanvas.height = h;
+    }
+    previewCtx.clearRect(0, 0, w, h);
+    previewCtx.drawImage(outCanvas, 0, 0, w, h);
+
+    if (cropEnabled) layoutCropBox();
+  }
+
+  function startPreviewLoop() {
+    if (previewLoopId) return;
+    const step = () => {
+      renderPreviewFrame(false);
+      if (!previewVideo.paused && !previewVideo.ended) {
+        previewLoopId = requestAnimationFrame(step);
+      } else {
+        previewLoopId = null;
+      }
+    };
+    previewLoopId = requestAnimationFrame(step);
+  }
+  function stopPreviewLoop() {
+    if (previewLoopId) cancelAnimationFrame(previewLoopId);
+    previewLoopId = null;
+  }
+
+  async function ensureFFmpeg() {
+    if (ffmpeg) return ffmpeg;
+    if (typeof FFmpeg === 'undefined') {
+      throw new Error('Biblioteca ffmpeg.wasm não carregou. Verifique sua conexão com a internet.');
+    }
+    const { createFFmpeg } = FFmpeg;
+    ffmpeg = createFFmpeg({
+      log: false,
+      corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+    });
+    ffmpeg.setProgress(({ ratio }) => {
+      if (ratio >= 0 && ratio <= 1) {
+        setProgress(ratio * 100);
+      }
+    });
+    ffmpeg.setLogger(({ message }) => {
+      if (message) logLine(message);
+    });
+    setStatus('carregando motor de vídeo (primeira vez pode demorar um pouco)…');
+    await ffmpeg.load();
+    return ffmpeg;
+  }
+
+  // ---- VHS effect pipeline, reused per-frame ----
+  let fxCanvas, fxCtx, fxOff, fxOffCtx;
+  function ensureFxCanvases(w, h) {
+    if (!fxCanvas) {
+      fxCanvas = document.createElement('canvas');
+      fxCtx = fxCanvas.getContext('2d');
+      fxOff = document.createElement('canvas');
+      fxOffCtx = fxOff.getContext('2d');
+    }
+    if (fxCanvas.width !== w || fxCanvas.height !== h) {
+      fxCanvas.width = w; fxCanvas.height = h;
+      fxOff.width = w; fxOff.height = h;
+    }
+  }
+
+  function clamp(val, min, max) { return val < min ? min : (val > max ? max : val); }
+
+  function applyVhsEffects(img, w, h, v) {
+    ensureFxCanvases(w, h);
+
+    fxOffCtx.clearRect(0, 0, w, h);
+    const blurPx = (v.blur * 1.6).toFixed(2);
+    const satPct = (100 - v.sat * 25).toFixed(0);
+    const warmth = v.sat;
+    fxOffCtx.filter = `blur(${blurPx}px) saturate(${satPct}%) contrast(${(100 + v.sat*8).toFixed(0)}%)`;
+    fxOffCtx.drawImage(img, 0, 0, w, h);
+    fxOffCtx.filter = 'none';
+
+    const base = fxOffCtx.getImageData(0, 0, w, h);
+    const out = fxCtx.createImageData(w, h);
+    const bd = base.data, od = out.data;
+
+    if (v.bw > 0) {
+      for (let i = 0; i < bd.length; i += 4) {
+        const gray = bd[i] * 0.299 + bd[i + 1] * 0.587 + bd[i + 2] * 0.114;
+        bd[i]     = bd[i]     + (gray - bd[i])     * v.bw;
+        bd[i + 1] = bd[i + 1] + (gray - bd[i + 1]) * v.bw;
+        bd[i + 2] = bd[i + 2] + (gray - bd[i + 2]) * v.bw;
+      }
+    }
+
+    const shift = Math.round(v.chroma * 6);
+    const trackBands = [];
+    if (v.track > 0) {
+      const numBands = Math.floor(v.track * 6) + 1;
+      for (let i = 0; i < numBands; i++) {
+        const y0 = Math.floor(Math.random() * h);
+        const bandH = Math.floor(Math.random() * (h * 0.03)) + 1;
+        const dx = Math.floor((Math.random() - 0.5) * v.track * 40);
+        trackBands.push({ y0, y1: Math.min(h, y0 + bandH), dx });
+      }
+    }
+
+    for (let y = 0; y < h; y++) {
+      let rowShift = 0;
+      for (const band of trackBands) {
+        if (y >= band.y0 && y < band.y1) { rowShift = band.dx; break; }
+      }
+      for (let x = 0; x < w; x++) {
+        const di = (y * w + x) * 4;
+        let xR = clamp(x - shift + rowShift, 0, w - 1);
+        let xB = clamp(x + shift + rowShift, 0, w - 1);
+        let xG = clamp(x + rowShift, 0, w - 1);
+        const riR = (y * w + xR) * 4;
+        const riG = (y * w + xG) * 4;
+        const riB = (y * w + xB) * 4;
+        od[di]     = bd[riR];
+        od[di + 1] = bd[riG + 1];
+        od[di + 2] = bd[riB + 2];
+        od[di + 3] = 255;
+      }
+    }
+
+    if (warmth > 0) {
+      for (let i = 0; i < od.length; i += 4) {
+        od[i]     = clamp(od[i] + warmth * 10, 0, 255);
+        od[i + 2] = clamp(od[i + 2] - warmth * 4, 0, 255);
+      }
+    }
+
+    if (v.noise > 0) {
+      const amt = v.noise * 70;
+      for (let i = 0; i < od.length; i += 4) {
+        const n = (Math.random() - 0.5) * amt;
+        od[i]     = clamp(od[i] + n, 0, 255);
+        od[i + 1] = clamp(od[i + 1] + n, 0, 255);
+        od[i + 2] = clamp(od[i + 2] + n, 0, 255);
+      }
+    }
+
+    if (v.scan > 0) {
+      const darken = v.scan * 90;
+      for (let y = 0; y < h; y += 2) {
+        for (let x = 0; x < w; x++) {
+          const di = (y * w + x) * 4;
+          od[di]     = clamp(od[di] - darken, 0, 255);
+          od[di + 1] = clamp(od[di + 1] - darken, 0, 255);
+          od[di + 2] = clamp(od[di + 2] - darken, 0, 255);
+        }
+      }
+    }
+
+    fxCtx.putImageData(out, 0, 0);
+
+    if (v.vig > 0) {
+      const grad = fxCtx.createRadialGradient(w/2, h/2, Math.min(w,h)*0.3, w/2, h/2, Math.min(w,h)*0.75);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, `rgba(0,0,0,${(v.vig * 0.85).toFixed(2)})`);
+      fxCtx.fillStyle = grad;
+      fxCtx.fillRect(0, 0, w, h);
+    }
+
+    return fxCanvas;
+  }
+
+  function pad5(n) { return String(n).padStart(5, '0'); }
+
+  processBtn.addEventListener('click', processVideo);
+
+  async function processVideo() {
+    if (!videoFile) return;
+    isProcessing = true;
+    stopPreviewLoop();
+    processBtn.disabled = true;
+    uploadBtn.disabled = true;
+    playPauseBtn.disabled = true;
+    if (!previewVideo.paused) previewVideo.pause();
+    progressWrap.classList.add('active');
+    logEl.innerHTML = '';
+    setProgress(0, 'iniciando…');
+    setStatus('');
+
+    const v = getVals();
+    const fps = parseInt(fpsSelect.value, 10);
+    const targetWidth = parseInt(resSelect.value, 10);
+
+    try {
+      const engine = await ensureFFmpeg();
+      const { fetchFile } = FFmpeg;
+
+      const ext = (videoFile.name.split('.').pop() || 'mp4').toLowerCase();
+      const inputName = `input.${ext}`;
+
+      setProgress(0, 'carregando arquivo de vídeo…');
+      engine.FS('writeFile', inputName, await fetchFile(videoFile));
+
+      // 0. Use the already-loaded preview <video> for the source's real
+      // (already rotation-corrected) dimensions and duration, instead of
+      // relying on ffmpeg's own probing/scale math, which can misbehave
+      // with this ffmpeg.wasm build and/or rotation metadata.
+      if (previewVideo.readyState < 1) {
+        await new Promise((resolve, reject) => {
+          previewVideo.addEventListener('loadedmetadata', resolve, { once: true });
+          previewVideo.addEventListener('error', () => reject(new Error('Não foi possível ler as dimensões do vídeo original.')), { once: true });
+        });
+      }
+      const srcW = previewVideo.videoWidth;
+      const srcH = previewVideo.videoHeight;
+      const totalDuration = previewVideo.duration || 0;
+      if (!srcW || !srcH) throw new Error('Não foi possível ler as dimensões do vídeo original.');
+
+      // Trim range (falls back to the full video if nothing was selected yet)
+      let ts = trimStart, te = trimEnd;
+      if (!te || te <= ts) { ts = 0; te = totalDuration; }
+      te = Math.min(te, totalDuration);
+      const doTrim = totalDuration > 0 && (ts > 0.01 || te < totalDuration - 0.01);
+      const seekArgs = doTrim ? ['-ss', ts.toFixed(2)] : [];
+      const durArgs = doTrim ? ['-t', Math.max(0.1, te - ts).toFixed(2)] : [];
+      if (doTrim) logLine(`recortando trecho: ${fmtTime(ts)} – ${fmtTime(te)}`);
+
+      // Crop to 4:3 (if the user positioned the crop box) + target resolution
+      let cropFilter = null;
+      let width, height;
+      if (cropEnabled) {
+        const vRect = getVideoDisplayRect();
+        const box = computeCropBoxSize(vRect);
+        const slackX = Math.max(0, vRect.width - box.w);
+        const slackY = Math.max(0, vRect.height - box.h);
+        const boxLeftDisp = slackX * cropPosXFrac;
+        const boxTopDisp = slackY * cropPosYFrac;
+        const scale = srcW / vRect.width; // uniform scale factor (displayed px -> source px)
+
+        let cropW = Math.round(box.w * scale); cropW -= cropW % 2;
+        let cropH = Math.round(cropW * 3 / 4); cropH -= cropH % 2;
+        let cropX = Math.round(boxLeftDisp * scale);
+        let cropY = Math.round(boxTopDisp * scale);
+        cropX = Math.min(Math.max(cropX, 0), Math.max(0, srcW - cropW));
+        cropY = Math.min(Math.max(cropY, 0), Math.max(0, srcH - cropH));
+
+        cropFilter = `crop=${cropW}:${cropH}:${cropX}:${cropY}`;
+        width = targetWidth & ~1;
+        height = Math.round(width * 3 / 4); height -= height % 2;
+        logLine(`cortando em 4:3: ${cropW}x${cropH} a partir de (${cropX},${cropY})`);
+      } else {
+        width = Math.min(targetWidth, srcW) & ~1; // even
+        height = Math.round((width * srcH) / srcW);
+        height = height % 2 === 0 ? height : height + 1; // even
+      }
+
+      const vfChain = `fps=${fps}` + (cropFilter ? `,${cropFilter}` : '') + `,scale=${width}:${height}`;
+
+      // 1. Extract frames at reduced fps/resolution (explicit W:H keeps the
+      // desired aspect ratio instead of relying on ffmpeg to infer it)
+      setProgress(0, 'extraindo quadros do vídeo…');
+      await engine.run(...seekArgs, '-i', inputName, ...durArgs, '-vf', vfChain, 'frame_%05d.png');
+
+      // 2. Try to extract audio (video may not have one)
+      let hasAudio = true;
+      setProgress(0, 'extraindo áudio…');
+      try {
+        await engine.run(...seekArgs, '-i', inputName, ...durArgs, '-vn', '-acodec', 'aac', '-b:a', '128k', 'audio.aac');
+      } catch (err) {
+        hasAudio = false;
+        logLine('sem faixa de áudio detectada, seguindo sem som.');
+      }
+
+      // 3. List extracted frames
+      const files = engine.FS('readdir', '/').filter(f => /^frame_\d{5}\.png$/.test(f)).sort();
+      if (files.length === 0) throw new Error('Nenhum quadro foi extraído do vídeo.');
+
+      // 4. Apply VHS effect to each frame
+      for (let i = 0; i < files.length; i++) {
+        const fname = files[i];
+        const data = engine.FS('readFile', fname);
+        const blob = new Blob([data.buffer], { type: 'image/png' });
+        const bitmap = await createImageBitmap(blob);
+
+        const processedCanvas = applyVhsEffects(bitmap, bitmap.width, bitmap.height, v);
+        const outBlob = await new Promise(res => processedCanvas.toBlob(res, 'image/png'));
+        const outBuf = new Uint8Array(await outBlob.arrayBuffer());
+        engine.FS('writeFile', fname, outBuf);
+
+        bitmap.close();
+        const pct = ((i + 1) / files.length) * 100;
+        setProgress(pct, `aplicando efeitos: quadro ${i + 1}/${files.length}`);
+        if (i % 5 === 0) await new Promise(r => setTimeout(r, 0)); // keep UI responsive
+      }
+
+      // 5. Reassemble into mp4
+      setProgress(0, 'remontando vídeo final…');
+      const assembleArgs = ['-framerate', String(fps), '-i', 'frame_%05d.png'];
+      if (hasAudio) assembleArgs.push('-i', 'audio.aac');
+      assembleArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p');
+      if (hasAudio) assembleArgs.push('-c:a', 'aac', '-shortest');
+      assembleArgs.push('output.mp4');
+      await engine.run(...assembleArgs);
+
+      // 6. Read result and offer download
+      const result = engine.FS('readFile', 'output.mp4');
+      const resultBlob = new Blob([result.buffer], { type: 'video/mp4' });
+      const url = URL.createObjectURL(resultBlob);
+
+      stopPreviewLoop();
+      previewCanvas.style.display = 'none';
+      playPauseBtn.style.display = 'none';
+      resultVideo.src = url;
+      resultVideo.style.display = 'block';
+
+      const link = document.createElement('a');
+      link.download = 'vhs-video.mp4';
+      link.href = url;
+      link.click();
+
+      setProgress(100, 'concluído ✓');
+      setStatus('vídeo pronto e baixado ✓');
+
+      // cleanup virtual FS to free memory for a possible next run
+      try {
+        files.forEach(f => engine.FS('unlink', f));
+        engine.FS('unlink', inputName);
+        if (hasAudio) engine.FS('unlink', 'audio.aac');
+        engine.FS('unlink', 'output.mp4');
+      } catch (e) { /* ignore cleanup errors */ }
+
+    } catch (err) {
+      console.error(err);
+      setStatus('erro ao processar vídeo: ' + (err && err.message ? err.message : String(err)), true);
+    } finally {
+      isProcessing = false;
+      processBtn.disabled = false;
+      uploadBtn.disabled = false;
+      playPauseBtn.disabled = false;
+      if (previewCanvas.style.display !== 'none') renderPreviewFrame(true);
+    }
+  }
+})();
+</script>
+
+</body>
+</html>

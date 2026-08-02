@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>VHS-IZER 3000</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230c0b10'/%3E%3Crect x='1' y='1' width='98' height='98' rx='19' fill='none' stroke='%232a2732' stroke-width='1'/%3E%3Cg transform='translate(-2.5,-1.5)'%3E%3Cpolygon points='37,29 37,71 73,50' fill='%232ee6d6' opacity='0.85'/%3E%3C/g%3E%3Cg transform='translate(2.5,1.5)'%3E%3Cpolygon points='37,29 37,71 73,50' fill='%23ff3e9d' opacity='0.85'/%3E%3C/g%3E%3Cpolygon points='37,29 37,71 73,50' fill='%23f5f3f8'/%3E%3Ccircle cx='82' cy='20' r='4' fill='%23ff3e9d'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg: #0c0b10;
+    --panel: #17151d;
+    --panel-line: #2a2732;
+    --tape-black: #050507;
+    --cyan: #2ee6d6;
+    --magenta: #ff3e9d;
+    --amber: #ffb020;
+    --text: #d9d6e0;
+    --text-dim: #6f6c7a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Courier New', Courier, monospace;
+    min-height: 100%;
+  }
+  body {
+    padding: 32px 16px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+
+  /* ---- Header / signature element ---- */
+  .header {
+    text-align: center;
+    position: relative;
+  }
+  .logo {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 12px;
+    display: block;
+    border-radius: 12px;
+  }
+  .header h1 {
+    font-size: clamp(28px, 6vw, 52px);
+    letter-spacing: 4px;
+    margin: 0;
+    font-weight: 700;
+    color: #fff;
+    text-shadow:
+      2px 0 0 var(--cyan),
+      -2px 0 0 var(--magenta);
+    animation: flicker 4.5s infinite steps(1);
+  }
+  @keyframes flicker {
+    0%, 91%, 100% { opacity: 1; }
+    92% { opacity: .78; }
+    93% { opacity: 1; }
+    94% { opacity: .85; }
+    95% { opacity: 1; }
+  }
+  .header .sub {
+    margin-top: 6px;
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  .rec-dot {
+    display: inline-block;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--magenta);
+    margin-right: 8px;
+    animation: blink 1.2s infinite;
+    vertical-align: middle;
+  }
+  @keyframes blink { 50% { opacity: .15; } }
+
+  /* ---- Layout ---- */
+  .deck {
+    width: 100%;
+    max-width: 1040px;
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 6px;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 800px) {
+    .deck { grid-template-columns: 1fr; }
+  }
+
+  /* ---- Screen area ---- */
+  .screen-wrap {
+    background: var(--tape-black);
+    border: 1px solid var(--panel-line);
+    border-radius: 4px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .canvas-frame {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #000
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, transparent 2px);
+    border: 1px solid #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+  }
+  .placeholder {
+    color: var(--text-dim);
+    font-size: 13px;
+    text-align: center;
+    padding: 20px;
+    letter-spacing: 1px;
+  }
+  .osd {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    font-size: 12px;
+    color: #fff;
+    text-shadow: 1px 1px 0 #000;
+    letter-spacing: 2px;
+    pointer-events: none;
+    opacity: .85;
+  }
+  .osd.bottom {
+    top: auto;
+    bottom: 10px;
+    right: 12px;
+    left: auto;
+  }
+
+  .crop-box {
+    position: absolute; border: 2px solid var(--cyan); box-shadow: 0 0 0 2000px rgba(0,0,0,.55);
+    cursor: grab; touch-action: none; display: none;
+  }
+  .crop-box.active { display: block; }
+  .crop-box:active { cursor: grabbing; }
+  .crop-box::before, .crop-box::after {
+    content: ''; position: absolute; border: 1px dashed rgba(255,255,255,.4); pointer-events: none;
+  }
+  .crop-box::before { left: 33.333%; right: 33.333%; top: 0; bottom: 0; border-top: none; border-bottom: none; }
+  .crop-box::after { top: 33.333%; bottom: 33.333%; left: 0; right: 0; border-left: none; border-right: none; }
+  .crop-label {
+    position: absolute; top: -20px; left: 0; font-size: 10px; letter-spacing: 1px; color: var(--cyan);
+    background: rgba(0,0,0,.6); padding: 1px 6px; border-radius: 3px; white-space: nowrap;
+  }
+  .crop-actions { display: none; gap: 10px; flex-wrap: wrap; }
+  .crop-actions.active { display: flex; }
+
+  .upload-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 10px 16px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .btn:hover { border-color: var(--cyan); color: #fff; }
+  .btn.primary {
+    background: var(--magenta);
+    border-color: var(--magenta);
+    color: #fff;
+  }
+  .btn.primary:hover { background: #ff5cad; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  input[type="file"] { display: none; }
+  .status-line {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--amber);
+    min-height: 14px;
+  }
+  .status-line.error { color: var(--magenta); }
+
+  /* ---- Controls ---- */
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .controls-title {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--panel-line);
+    padding-bottom: 8px;
+    margin-bottom: 2px;
+  }
+  .ctrl { display: flex; flex-direction: column; gap: 4px; }
+  .ctrl label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+  }
+  .ctrl label span.val { color: var(--cyan); }
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 3px;
+    background: var(--panel-line);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: var(--cyan);
+    cursor: pointer;
+    border: 2px solid #0c0b10;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: var(--cyan);
+    cursor: pointer;
+    border: 2px solid #0c0b10;
+  }
+
+  .presets {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .presets .btn { flex: 1; min-width: 90px; font-size: 10px; padding: 8px 10px; }
+
+  .footer-note {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: center;
+    max-width: 500px;
+    line-height: 1.6;
+  }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+</head>
+<body>
+
+  <div class="header">
+    <img class="logo" alt="Logotipo VHS-IZER 3000" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230c0b10'/%3E%3Crect x='1' y='1' width='98' height='98' rx='19' fill='none' stroke='%232a2732' stroke-width='1'/%3E%3Cg opacity='0.9'%3E%3Crect x='14' y='26' width='72' height='3' fill='%23ffffff' opacity='0.05'/%3E%3Crect x='14' y='34' width='72' height='2' fill='%23ffffff' opacity='0.04'/%3E%3Crect x='14' y='64' width='72' height='2' fill='%23ffffff' opacity='0.04'/%3E%3Crect x='14' y='71' width='72' height='3' fill='%23ffffff' opacity='0.05'/%3E%3C/g%3E%3Cg transform='translate(-2.5,-1.5)'%3E%3Cpolygon points='37,29 37,71 73,50' fill='%232ee6d6' opacity='0.85'/%3E%3C/g%3E%3Cg transform='translate(2.5,1.5)'%3E%3Cpolygon points='37,29 37,71 73,50' fill='%23ff3e9d' opacity='0.85'/%3E%3C/g%3E%3Cpolygon points='37,29 37,71 73,50' fill='%23f5f3f8'/%3E%3Ccircle cx='82' cy='20' r='4' fill='%23ff3e9d'/%3E%3C/svg%3E">
+    <h1>VHS-IZER&nbsp;3000</h1>
+    <div class="sub"><span class="rec-dot"></span>transforme fotos em gravações perdidas dos anos 80</div>
+  </div>
+
+  <div class="deck">
+    <div class="screen-wrap">
+      <div class="canvas-frame" id="frame">
+        <div class="placeholder" id="placeholder">nenhuma fita inserida<br>envie uma foto para começar</div>
+        <canvas id="canvas" style="display:none;"></canvas>
+        <div class="crop-box" id="cropBox"><div class="crop-label">4:3 — arraste para enquadrar</div></div>
+        <div class="osd" id="osdTop" style="display:none;">▶ PLAY</div>
+        <div class="osd bottom" id="osdTime" style="display:none;">00:00:12</div>
+      </div>
+      <div class="upload-row">
+        <button class="btn primary" id="uploadBtn">Carregar foto</button>
+        <button class="btn" id="cropToggleBtn" disabled>Cropar em 4:3</button>
+        <button class="btn" id="cropRemoveBtn" disabled>Remover corte</button>
+        <button class="btn" id="downloadBtn" disabled>Baixar imagem</button>
+        <button class="btn" id="gifBtn" disabled>Baixar GIF animado</button>
+        <button class="btn" id="resetBtn" disabled>Resetar controles</button>
+        <input type="file" id="fileInput" accept="image/*,.heic,.heif">
+      </div>
+      <div class="ctrl" id="cropSizeCtrl" style="display:none;">
+        <label>Tamanho do corte <span class="val" id="v-cropsize">100</span></label>
+        <input type="range" id="cropSize" min="30" max="100" value="100">
+      </div>
+      <div class="upload-row crop-actions" id="cropActions">
+        <button class="btn primary" id="cropApplyBtn">Aplicar corte</button>
+        <button class="btn" id="cropCancelBtn">Cancelar</button>
+      </div>
+      <div class="status-line" id="statusLine"></div>
+    </div>
+
+    <div class="controls">
+      <div class="controls-title">Controles de fita</div>
+
+      <div class="ctrl">
+        <label>Scan lines <span class="val" id="v-scan">45</span></label>
+        <input type="range" id="scan" min="0" max="100" value="45">
+      </div>
+      <div class="ctrl">
+        <label>Aberração cromática <span class="val" id="v-chroma">55</span></label>
+        <input type="range" id="chroma" min="0" max="100" value="55">
+      </div>
+      <div class="ctrl">
+        <label>Ruído / grão <span class="val" id="v-noise">35</span></label>
+        <input type="range" id="noise" min="0" max="100" value="35">
+      </div>
+      <div class="ctrl">
+        <label>Distorção de tracking <span class="val" id="v-track">25</span></label>
+        <input type="range" id="track" min="0" max="100" value="25">
+      </div>
+      <div class="ctrl">
+        <label>Desfoque <span class="val" id="v-blur">20</span></label>
+        <input type="range" id="blur" min="0" max="100" value="20">
+      </div>
+      <div class="ctrl">
+        <label>Saturação/cor quente <span class="val" id="v-sat">50</span></label>
+        <input type="range" id="sat" min="0" max="100" value="50">
+      </div>
+      <div class="ctrl">
+        <label>Preto e branco <span class="val" id="v-bw">0</span></label>
+        <input type="range" id="bw" min="0" max="100" value="0">
+      </div>
+      <div class="ctrl">
+        <label>Vinheta <span class="val" id="v-vig">40</span></label>
+        <input type="range" id="vig" min="0" max="100" value="40">
+      </div>
+
+      <div class="presets">
+        <button class="btn" data-preset="leve">Leve</button>
+        <button class="btn" data-preset="classico">Clássico</button>
+        <button class="btn" data-preset="podre">Fita podre</button>
+        <button class="btn" data-preset="pb">P&amp;B</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    Tudo roda localmente no seu navegador — a foto não é enviada a nenhum servidor.
+    Ajuste os controles e a prévia atualiza em tempo real.
+  </div>
+
+<script>
+(function(){
+  const fileInput = document.getElementById('fileInput');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const gifBtn = document.getElementById('gifBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const placeholder = document.getElementById('placeholder');
+  const osdTop = document.getElementById('osdTop');
+  const osdTime = document.getElementById('osdTime');
+  const frameEl = document.getElementById('frame');
+  const cropToggleBtn = document.getElementById('cropToggleBtn');
+  const cropRemoveBtn = document.getElementById('cropRemoveBtn');
+  const cropBox = document.getElementById('cropBox');
+  const cropSizeCtrl = document.getElementById('cropSizeCtrl');
+  const cropSizeInput = document.getElementById('cropSize');
+  const vCropSize = document.getElementById('v-cropsize');
+  const cropActions = document.getElementById('cropActions');
+  const cropApplyBtn = document.getElementById('cropApplyBtn');
+  const cropCancelBtn = document.getElementById('cropCancelBtn');
+
+  const sliders = ['scan','chroma','noise','track','blur','sat','bw','vig'];
+  const defaults = { scan:45, chroma:55, noise:35, track:25, blur:20, sat:50, bw:0, vig:40 };
+
+  let sourceImg = null;
+  let originalImg = null;
+  let previousSourceImg = null;
+  let hasCrop = false;
+  let cropSelecting = false;
+  let cropPosXFrac = 0.5, cropPosYFrac = 0.5; // 0..1, position of the crop box within the available slack
+  let cropSizeFrac = 1; // 0.3..1, size of the crop box relative to the largest 4:3 box that fits
+  let offCanvas = document.createElement('canvas');
+  let offCtx = offCanvas.getContext('2d');
+  let noiseSeedCanvas = document.createElement('canvas');
+
+  sliders.forEach(id => {
+    const el = document.getElementById(id);
+    const out = document.getElementById('v-' + id);
+    el.addEventListener('input', () => {
+      out.textContent = el.value;
+      render();
+    });
+  });
+
+  uploadBtn.addEventListener('click', () => fileInput.click());
+
+  const statusLine = document.getElementById('statusLine');
+
+  function isHeic(file) {
+    const name = (file.name || '').toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    return name.endsWith('.heic') || name.endsWith('.heif') ||
+           type === 'image/heic' || type === 'image/heif';
+  }
+
+  function setStatus(msg, isError) {
+    statusLine.textContent = msg || '';
+    statusLine.classList.toggle('error', !!isError);
+  }
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (isHeic(file)) {
+      setStatus('convertendo HEIC para JPEG…');
+      uploadBtn.disabled = true;
+      heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 })
+        .then((converted) => {
+          // heic2any pode retornar um array de blobs (multi-imagem); pegamos o primeiro
+          const blob = Array.isArray(converted) ? converted[0] : converted;
+          loadFromBlob(blob);
+          setStatus('convertido de HEIC ✓');
+          setTimeout(() => setStatus(''), 3000);
+        })
+        .catch((err) => {
+          console.error(err);
+          setStatus('não foi possível converter esse HEIC — tente exportar como JPEG antes de subir.', true);
+        })
+        .finally(() => {
+          uploadBtn.disabled = false;
+        });
+    } else {
+      loadFromBlob(file);
+    }
+  });
+
+  function loadFromBlob(blob) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        sourceImg = img;
+        originalImg = img;
+        hasCrop = false;
+        cropSelecting = false;
+        cropPosXFrac = 0.5; cropPosYFrac = 0.5; cropSizeFrac = 1;
+        cropBox.classList.remove('active');
+        cropSizeCtrl.style.display = 'none';
+        cropActions.classList.remove('active');
+        cropToggleBtn.textContent = 'Cropar em 4:3';
+        cropToggleBtn.classList.remove('primary');
+        cropRemoveBtn.disabled = true;
+        setupCanvas(img);
+        placeholder.style.display = 'none';
+        canvas.style.display = 'block';
+        osdTop.style.display = 'block';
+        osdTime.style.display = 'block';
+        downloadBtn.disabled = false;
+        gifBtn.disabled = false;
+        resetBtn.disabled = false;
+        cropToggleBtn.disabled = false;
+        render();
+      };
+      img.onerror = () => setStatus('não foi possível ler essa imagem.', true);
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(blob);
+  }
+
+  function setupCanvas(img) {
+    // Cap resolution for performance while keeping decent quality
+    const maxDim = 900;
+    let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const scale = Math.min(1, maxDim / Math.max(w, h));
+    w = Math.round(w * scale);
+    h = Math.round(h * scale);
+    canvas.width = w;
+    canvas.height = h;
+    offCanvas.width = w;
+    offCanvas.height = h;
+    noiseSeedCanvas.width = w;
+    noiseSeedCanvas.height = h;
+  }
+
+  function getVals() {
+    const v = {};
+    sliders.forEach(id => v[id] = parseInt(document.getElementById(id).value, 10) / 100);
+    return v;
+  }
+
+  // ---- 4:3 crop (draggable, resizable via slider) ----
+  function clamp01(n) { return n < 0 ? 0 : (n > 1 ? 1 : n); }
+
+  function getCanvasDisplayRect() {
+    const frameRect = frameEl.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+    return {
+      left: canvasRect.left - frameRect.left,
+      top: canvasRect.top - frameRect.top,
+      width: canvasRect.width,
+      height: canvasRect.height
+    };
+  }
+
+  function computeCropBoxSize(vRect) {
+    const maxH = Math.min(vRect.height, vRect.width * 3 / 4);
+    const maxW = maxH * 4 / 3;
+    return { w: maxW * cropSizeFrac, h: maxH * cropSizeFrac };
+  }
+
+  function layoutCropBox() {
+    if (!cropSelecting) return;
+    const vRect = getCanvasDisplayRect();
+    const box = computeCropBoxSize(vRect);
+    const slackX = Math.max(0, vRect.width - box.w);
+    const slackY = Math.max(0, vRect.height - box.h);
+    const left = vRect.left + slackX * cropPosXFrac;
+    const top = vRect.top + slackY * cropPosYFrac;
+    cropBox.style.left = left + 'px';
+    cropBox.style.top = top + 'px';
+    cropBox.style.width = box.w + 'px';
+    cropBox.style.height = box.h + 'px';
+  }
+
+  function moveCropBoxTo(clientLeft, clientTop) {
+    const frameRect = frameEl.getBoundingClientRect();
+    const vRect = getCanvasDisplayRect();
+    const box = computeCropBoxSize(vRect);
+    let left = (clientLeft - frameRect.left) - vRect.left;
+    let top = (clientTop - frameRect.top) - vRect.top;
+    const slackX = Math.max(0, vRect.width - box.w);
+    const slackY = Math.max(0, vRect.height - box.h);
+    left = Math.min(Math.max(left, 0), slackX);
+    top = Math.min(Math.max(top, 0), slackY);
+    cropPosXFrac = slackX > 0 ? left / slackX : 0.5;
+    cropPosYFrac = slackY > 0 ? top / slackY : 0.5;
+    layoutCropBox();
+  }
+
+  let cropDragOffset = null;
+  cropBox.addEventListener('pointerdown', (e) => {
+    if (!cropSelecting) return;
+    cropBox.setPointerCapture(e.pointerId);
+    const boxRect = cropBox.getBoundingClientRect();
+    cropDragOffset = { dx: e.clientX - boxRect.left, dy: e.clientY - boxRect.top };
+  });
+  cropBox.addEventListener('pointermove', (e) => {
+    if (!cropDragOffset) return;
+    moveCropBoxTo(e.clientX - cropDragOffset.dx, e.clientY - cropDragOffset.dy);
+  });
+  cropBox.addEventListener('pointerup', () => { cropDragOffset = null; });
+  cropBox.addEventListener('pointercancel', () => { cropDragOffset = null; });
+
+  cropSizeInput.addEventListener('input', () => {
+    cropSizeFrac = parseInt(cropSizeInput.value, 10) / 100;
+    vCropSize.textContent = cropSizeInput.value;
+    layoutCropBox();
+  });
+
+  window.addEventListener('resize', () => {
+    if (cropSelecting) layoutCropBox();
+  });
+
+  cropToggleBtn.addEventListener('click', () => {
+    if (!originalImg || cropSelecting) return;
+    enterCropMode();
+  });
+  cropCancelBtn.addEventListener('click', () => exitCropMode(false));
+
+  function enterCropMode() {
+    previousSourceImg = sourceImg;
+    cropSelecting = true;
+    sourceImg = originalImg;
+    setupCanvas(originalImg);
+    render();
+    cropBox.classList.add('active');
+    cropSizeCtrl.style.display = 'flex';
+    cropActions.classList.add('active');
+    cropToggleBtn.disabled = true;
+    cropRemoveBtn.disabled = true;
+    downloadBtn.disabled = true;
+    gifBtn.disabled = true;
+    setStatus('posicione o corte e clique em "Aplicar corte"');
+    // aguarda o layout assentar antes de posicionar a caixa
+    requestAnimationFrame(layoutCropBox);
+  }
+
+  function exitCropMode(applied) {
+    cropSelecting = false;
+    cropBox.classList.remove('active');
+    cropSizeCtrl.style.display = 'none';
+    cropActions.classList.remove('active');
+    cropToggleBtn.disabled = false;
+    cropToggleBtn.classList.remove('primary');
+    cropToggleBtn.textContent = hasCrop ? 'Ajustar corte 4:3' : 'Cropar em 4:3';
+    cropRemoveBtn.disabled = !hasCrop;
+    downloadBtn.disabled = false;
+    gifBtn.disabled = false;
+    setStatus('');
+    if (!applied) {
+      sourceImg = previousSourceImg;
+      setupCanvas(sourceImg);
+      render();
+    }
+  }
+
+  cropApplyBtn.addEventListener('click', () => {
+    const vRect = getCanvasDisplayRect();
+    const box = computeCropBoxSize(vRect);
+    const slackX = Math.max(0, vRect.width - box.w);
+    const slackY = Math.max(0, vRect.height - box.h);
+    const boxLeftDisp = slackX * cropPosXFrac;
+    const boxTopDisp = slackY * cropPosYFrac;
+    const scale = originalImg.naturalWidth / vRect.width; // displayed px -> source px
+
+    let cropW = Math.round(box.w * scale); cropW -= cropW % 2;
+    let cropH = Math.round(cropW * 3 / 4); cropH -= cropH % 2;
+    let cropX = Math.round(boxLeftDisp * scale);
+    let cropY = Math.round(boxTopDisp * scale);
+    cropX = Math.min(Math.max(cropX, 0), Math.max(0, originalImg.naturalWidth - cropW));
+    cropY = Math.min(Math.max(cropY, 0), Math.max(0, originalImg.naturalHeight - cropH));
+
+    const cropped = document.createElement('canvas');
+    cropped.width = Math.max(1, cropW);
+    cropped.height = Math.max(1, cropH);
+    cropped.getContext('2d').drawImage(originalImg, cropX, cropY, cropW, cropH, 0, 0, cropped.width, cropped.height);
+
+    sourceImg = cropped;
+    hasCrop = true;
+    exitCropMode(true);
+    setupCanvas(sourceImg);
+    render();
+  });
+
+  cropRemoveBtn.addEventListener('click', () => {
+    if (!hasCrop || cropSelecting) return;
+    sourceImg = originalImg;
+    hasCrop = false;
+    cropToggleBtn.textContent = 'Cropar em 4:3';
+    cropRemoveBtn.disabled = true;
+    setupCanvas(sourceImg);
+    render();
+  });
+
+  function render() {
+    if (!sourceImg) return;
+    const v = getVals();
+    const w = canvas.width, h = canvas.height;
+
+    // 1. Draw base image with slight blur + saturation/warmth via CSS filter on offscreen ctx
+    offCtx.clearRect(0, 0, w, h);
+    const blurPx = (v.blur * 1.6).toFixed(2);
+    const satPct = (100 - v.sat * 25).toFixed(0); // reduce saturation as sat increases (washed look)
+    const warmth = v.sat;
+    offCtx.filter = `blur(${blurPx}px) saturate(${satPct}%) contrast(${(100 + v.sat*8).toFixed(0)}%)`;
+    offCtx.drawImage(sourceImg, 0, 0, w, h);
+    offCtx.filter = 'none';
+
+    const base = offCtx.getImageData(0, 0, w, h);
+    const out = ctx.createImageData(w, h);
+    const bd = base.data, od = out.data;
+
+    // Preto e branco (mistura com luminosidade, mantém demais efeitos por cima)
+    if (v.bw > 0) {
+      for (let i = 0; i < bd.length; i += 4) {
+        const gray = bd[i] * 0.299 + bd[i + 1] * 0.587 + bd[i + 2] * 0.114;
+        bd[i]     = bd[i]     + (gray - bd[i])     * v.bw;
+        bd[i + 1] = bd[i + 1] + (gray - bd[i + 1]) * v.bw;
+        bd[i + 2] = bd[i + 2] + (gray - bd[i + 2]) * v.bw;
+      }
+    }
+
+    // Chromatic aberration offset (horizontal shift for R and B channels)
+    const shift = Math.round(v.chroma * 6);
+
+    // Tracking distortion: random horizontal line shifts, banded
+    const trackBands = [];
+    if (v.track > 0) {
+      const numBands = Math.floor(v.track * 6) + 1;
+      for (let i = 0; i < numBands; i++) {
+        const y0 = Math.floor(Math.random() * h);
+        const bandH = Math.floor(Math.random() * (h * 0.03)) + 1;
+        const dx = Math.floor((Math.random() - 0.5) * v.track * 40);
+        trackBands.push({ y0, y1: Math.min(h, y0 + bandH), dx });
+      }
+    }
+
+    for (let y = 0; y < h; y++) {
+      let rowShift = 0;
+      for (const band of trackBands) {
+        if (y >= band.y0 && y < band.y1) { rowShift = band.dx; break; }
+      }
+      for (let x = 0; x < w; x++) {
+        const di = (y * w + x) * 4;
+
+        // source coords with chromatic shift + row tracking shift
+        let xR = x - shift + rowShift;
+        let xB = x + shift + rowShift;
+        let xG = x + rowShift;
+
+        xR = clamp(xR, 0, w - 1);
+        xB = clamp(xB, 0, w - 1);
+        xG = clamp(xG, 0, w - 1);
+
+        const riR = (y * w + xR) * 4;
+        const riG = (y * w + xG) * 4;
+        const riB = (y * w + xB) * 4;
+
+        od[di]     = bd[riR];     // R
+        od[di + 1] = bd[riG + 1]; // G
+        od[di + 2] = bd[riB + 2]; // B
+        od[di + 3] = 255;
+      }
+    }
+
+    // Warmth tint: push toward amber/magenta slightly
+    if (warmth > 0) {
+      for (let i = 0; i < od.length; i += 4) {
+        od[i]     = clamp(od[i] + warmth * 10, 0, 255);
+        od[i + 2] = clamp(od[i + 2] - warmth * 4, 0, 255);
+      }
+    }
+
+    // Noise / grain
+    if (v.noise > 0) {
+      const amt = v.noise * 70;
+      for (let i = 0; i < od.length; i += 4) {
+        const n = (Math.random() - 0.5) * amt;
+        od[i]     = clamp(od[i] + n, 0, 255);
+        od[i + 1] = clamp(od[i + 1] + n, 0, 255);
+        od[i + 2] = clamp(od[i + 2] + n, 0, 255);
+      }
+    }
+
+    // Scan lines
+    if (v.scan > 0) {
+      const darken = v.scan * 90;
+      for (let y = 0; y < h; y += 2) {
+        for (let x = 0; x < w; x++) {
+          const di = (y * w + x) * 4;
+          od[di]     = clamp(od[di] - darken, 0, 255);
+          od[di + 1] = clamp(od[di + 1] - darken, 0, 255);
+          od[di + 2] = clamp(od[di + 2] - darken, 0, 255);
+        }
+      }
+    }
+
+    ctx.putImageData(out, 0, 0);
+
+    // Vignette (drawn on top with gradient)
+    if (v.vig > 0) {
+      const grad = ctx.createRadialGradient(
+        w / 2, h / 2, Math.min(w, h) * 0.3,
+        w / 2, h / 2, Math.min(w, h) * 0.75
+      );
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, `rgba(0,0,0,${(v.vig * 0.85).toFixed(2)})`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+    }
+  }
+
+  function clamp(val, min, max) {
+    return val < min ? min : (val > max ? max : val);
+  }
+
+  downloadBtn.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'vhs-photo.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+
+  let gifWorkerBlobUrl = null;
+  async function getGifWorkerScript() {
+    if (gifWorkerBlobUrl) return gifWorkerBlobUrl;
+    const cdnUrl = 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js';
+    try {
+      const res = await fetch(cdnUrl);
+      const code = await res.text();
+      const blob = new Blob([code], { type: 'application/javascript' });
+      gifWorkerBlobUrl = URL.createObjectURL(blob);
+      return gifWorkerBlobUrl;
+    } catch (err) {
+      // fallback: tenta a URL direta (pode falhar em file://, mas funciona se servido por http/https)
+      return cdnUrl;
+    }
+  }
+
+  gifBtn.addEventListener('click', exportGif);
+
+  async function exportGif() {
+    if (!sourceImg) return;
+    gifBtn.disabled = true;
+    uploadBtn.disabled = true;
+    setStatus('preparando gerador de gif…');
+
+    let workerScript;
+    try {
+      workerScript = await getGifWorkerScript();
+    } catch (err) {
+      setStatus('não foi possível carregar o gerador de gif. verifique sua conexão.', true);
+      gifBtn.disabled = false;
+      uploadBtn.disabled = false;
+      return;
+    }
+
+    setStatus('gerando gif animado… 0%');
+
+    const FRAMES = 14;
+    const FRAME_DELAY = 90;
+
+    // Downscale for reasonable file size / speed
+    const maxGifDim = 480;
+    const scale = Math.min(1, maxGifDim / Math.max(canvas.width, canvas.height));
+    const gw = Math.max(1, Math.round(canvas.width * scale));
+    const gh = Math.max(1, Math.round(canvas.height * scale));
+
+    const gifCanvas = document.createElement('canvas');
+    gifCanvas.width = gw;
+    gifCanvas.height = gh;
+    const gifCtx = gifCanvas.getContext('2d');
+
+    const gif = new GIF({
+      workers: 2,
+      quality: 10,
+      width: gw,
+      height: gh,
+      workerScript: workerScript
+    });
+
+    gif.on('progress', (p) => {
+      setStatus(`gerando gif animado… ${Math.round(p * 100)}%`);
+    });
+
+    gif.on('finished', (blob) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = 'vhs-photo.gif';
+      link.href = url;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      setStatus('gif pronto ✓');
+      setTimeout(() => setStatus(''), 3000);
+      gifBtn.disabled = false;
+      uploadBtn.disabled = false;
+    });
+
+    let i = 0;
+    function nextFrame() {
+      if (i >= FRAMES) {
+        gif.render();
+        return;
+      }
+      // occasional vertical roll jitter, like unstable tracking
+      const rollGlitch = Math.random() < 0.3;
+      const rollShift = rollGlitch ? Math.round((Math.random() - 0.5) * gh * 0.04) : 0;
+
+      render(); // re-renders main canvas with fresh random noise/tracking/scanlines
+
+      gifCtx.clearRect(0, 0, gw, gh);
+      gifCtx.drawImage(canvas, 0, rollShift, gw, gh);
+
+      gif.addFrame(gifCtx, { copy: true, delay: FRAME_DELAY });
+      i++;
+      setStatus(`capturando frame ${i}/${FRAMES}…`);
+      setTimeout(nextFrame, 20);
+    }
+    nextFrame();
+  }
+
+  resetBtn.addEventListener('click', () => {
+    sliders.forEach(id => {
+      document.getElementById(id).value = defaults[id];
+      document.getElementById('v-' + id).textContent = defaults[id];
+    });
+    render();
+  });
+
+  const presets = {
+    leve:     { scan:20, chroma:25, noise:15, track:5,  blur:10, sat:20, bw:0,   vig:20 },
+    classico: { scan:45, chroma:55, noise:35, track:25, blur:20, sat:50, bw:0,   vig:40 },
+    podre:    { scan:70, chroma:85, noise:65, track:70, blur:40, sat:75, bw:0,   vig:60 },
+    pb:       { scan:50, chroma:15, noise:45, track:20, blur:15, sat:0,  bw:100, vig:55 }
+  };
+
+  document.querySelectorAll('[data-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = presets[btn.dataset.preset];
+      sliders.forEach(id => {
+        document.getElementById(id).value = p[id];
+        document.getElementById('v-' + id).textContent = p[id];
+      });
+      render();
+    });
+  });
+
+  // Subtle OSD timer animation
+  let seconds = 12;
+  setInterval(() => {
+    if (osdTime.style.display === 'none') return;
+    seconds++;
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    osdTime.textContent = `00:${m}:${s}`;
+  }, 1000);
+})();
+</script>
+
+</body>
+</html>
